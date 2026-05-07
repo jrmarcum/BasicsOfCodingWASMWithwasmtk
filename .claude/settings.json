@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"d:\\\\Programs\\\\_ProgramExamples\\\\Example_Programs\\\\GithubProjects\\\\BasicsOfCodingDeno\")",
+      "Read(//d/Programs/_ProgramExamples/Example_Programs/GithubProjects/BasicsOfCodingDeno/**)",
+      "WebFetch(domain:jsr.io)",
+      "Bash(deno info *)",
+      "Bash(where.exe deno *)",
+      "Read(//c/Users/Jmarcum/AppData/Local/deno/remote/https/jsr.io/**)",
+      "PowerShell(deno run jsr:@jrmarcum/wasmtk --help 2>&1)",
+      "Bash(Sort-Object Name)",
+      "PowerShell(Get-ChildItem 'C:\\\\Users\\\\Jmarcum\\\\AppData\\\\Local\\\\deno\\\\remote\\\\https\\\\jsr.io\\\\' | Where-Object {$_.Length -gt 350000} | Select-Object Name, Length)",
+      "Bash(sort -k5 -rn)",
+      "Bash(grep -v \"//.*\\\\.\")",
+      "PowerShell(cd \"d:\\\\Programs\\\\_ProgramExamples\\\\Example_Programs\\\\GithubProjects\\\\BasicsOfCodingWASMWithwasmtk\"; $failures = @\\(\\); Get-ChildItem -Directory | Where-Object { $_.Name -match '^\\\\d{2}_' } | Sort-Object Name | ForEach-Object { $dir = $_.FullName; $stem = $_.Name -replace '^\\\\d{2}_', ''; $ts = Join-Path $dir \"$stem.ts\"; if \\(Test-Path $ts\\) { Write-Host \"Compiling $\\($_.Name\\)/$stem.ts ...\"; Push-Location $dir; $out = wasmtk wasic \"$stem.ts\" 2>&1; $code = $LASTEXITCODE; Pop-Location; if \\($code -ne 0\\) { $failures += \"$\\($_.Name\\): $out\"; Write-Host \"  FAILED: $out\" } else { Write-Host \"  OK\" } } else { Write-Host \"  SKIP \\(no $stem.ts\\)\" } }; if \\($failures.Count -gt 0\\) { Write-Host \"`nFAILED:\"; $failures | ForEach-Object { Write-Host \"  $_\" } } else { Write-Host \"`nAll lessons compiled successfully.\" })"
+    ]
+  }
+}

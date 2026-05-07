@@ -1,0 +1,16 @@
+# Compiled WASM binaries produced by wasmtk wasic (lessons compile .ts → .wasm)
+*.wasm
+
+# Temporary files created by lesson examples (lessons 58-60)
+tmp/
+
+# Deno cache
+.deno/
+
+# Environment files
+.env
+.env.local
+
+# OS artifacts
+.DS_Store
+Thumbs.db
