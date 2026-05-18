@@ -1,44 +1,65 @@
 # Basics of Coding WASM with wasmtk
+
 ## Preface
+
 What this text is and what it is not: This text is intended to introduce the reader to the basics of WebAssembly programming in the sense that they will be able to write minimal types of programs and compile and run them as WASM modules. It is not intended to go into advanced topics like multi-threading, shared memory, SIMD, or WebAssembly component model.
 
 The programs are intended to be run in the terminal as that is common to most operating systems. Linux and Mac come preinstalled with a terminal. Windows may or may not have it pre-installed. "Windows Terminal" can be installed from the Microsoft store. Just do a search for it and install it.
+
 ## Installation and Setup of wasmtk
+
 To set up wasmtk, install [Deno](https://deno.com/) first, then install wasmtk from JSR:
+
+```sh
+deno install -g -A jsr:@jrmarcum/wasmtk
 ```
-$ deno install -g -A jsr:@jrmarcum/wasmtk
-```
+
 If wasmtk has been installed properly you will be able to type the following command in the terminal command line and receive the response shown:
-```
-$ wasmtk --version
+
+```sh
+wasmtk --version
 wasmtk v1.5.4
 (Note: the version shown here varies with your installed version)
 ```
+
 ## How to Run Examples
 
 Each lesson folder contains a `.ts` (TypeScript) source file and a `.md` file showing the run command and expected output. wasmtk compiles the TypeScript to a standalone WASI module and runs it — no separate compilation step needed.
 
 Navigate into the lesson folder and run with `wasmtk run`:
 
-```
-$ cd 01_hello-world
-$ wasmtk run hello-world.ts
+```sh
+cd 01_hello-world
+wasmtk run hello-world.ts
 hello world
 ```
 
 You can also compile to a `.wasm` binary first and then run it separately — the output is identical:
 
-```
-$ wasmtk wasic hello-world.ts
-$ wasmtk run hello-world.wasm
+```sh
+wasmtk wasic hello-world.ts
+wasmtk run hello-world.wasm
 hello world
 ```
 
 Use `wasmtk info` to inspect the exported functions and metadata of any compiled binary:
 
+```sh
+wasmtk info hello-world.wasm
 ```
-$ wasmtk info hello-world.wasm
+
+## Project Structure
+
+```text
+BasicsOfCodingWASMWithwasmtk/
+├── upstream/
+│   └── basicsofcodinggo/  — reference implementation (git submodule)
+└── ##_topic-name/
+    ├── topic-name.ts      — TypeScript source (compiled to WASM via wasmtk wasic)
+    └── topic-name.md      — run command and expected output
 ```
+
+Lessons are numbered with a two-digit prefix matching BasicsOfCodingGo exactly: same lesson numbers, same folder names.
 
 ## Lessons
 
@@ -122,6 +143,32 @@ $ wasmtk info hello-world.wasm
 | 76 | signals |
 | 77 | exit |
 | 78 | sha256-hashes |
+
+## WASM and TypeScript Constraints
+
+These examples use the `wasic` compilation path in wasmtk, which compiles a specific subset of TypeScript to a standalone WASI module. Some features common in standard TypeScript or Node.js are not available in this environment.
+
+**Not supported:**
+
+- `for...of` / `for...in` — examples use indexed `for` loops
+- Classes — examples use `interface` + factory functions
+- `Math.random()` — examples use a seeded deterministic PRNG (mulberry32, seed 42)
+- `Date` object — time/epoch lessons use static example values
+- `JSON.parse()` / `JSON.stringify()` — built and parsed manually
+- `parseInt()` / `parseFloat()` — implemented manually or via typed conversion
+- Network APIs (`fetch`, HTTP, TCP) — not available in WASI
+- Process APIs (`exec`, `spawn`, signals) — not available in WASI
+- Custom exit codes — `proc_exit` always exits 0
+
+**Workarounds used in specific lessons:**
+
+- Concurrency (27–37): WebAssembly is single-threaded; sequential equivalents with explanatory notes
+- Networking (69–72): No network stack in WASI; hardcoded simulations with explanatory notes
+- File I/O (58–60): Hardcoded simulations; file read/write and stdin are not available in WASI
+- Command-line arguments and flags (64–66): Hardcoded demo values with explanatory notes
+- Cryptography (78): SHA-256 pre-computed; no crypto API in WASI
+
+Each lesson `.md` file notes any WASM-specific workarounds at the top.
 
 ## Attribution
 
