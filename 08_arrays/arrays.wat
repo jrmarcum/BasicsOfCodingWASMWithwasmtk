@@ -2,7 +2,9 @@
   (import "wasi_snapshot_preview1" "proc_exit" (func $proc_exit (param i32)))
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 2)
-  (global $__heap_ptr (mut i32) (i32.const 341))
+  (global $__heap_ptr (mut i32) (i32.const 359))
+  (global $__str_ret_ptr (mut i32) (i32.const 0))
+  (global $__str_ret_len (mut i32) (i32.const 0))
   ;; Bump allocator — advances __heap_ptr and returns the old value
   (func $__malloc (param $size i32) (result i32)
     (local $ptr i32)
@@ -130,6 +132,44 @@
     (i32.const -1)
   )
 
+  ;; ── str_indexof_from: first occurrence of sub in str starting at 'from', or -1 ─
+  (func $__str_indexof_from
+    (param $ptr i32) (param $len i32) (param $subptr i32) (param $sublen i32) (param $from i32)
+    (result i32)
+    (local $i i32) (local $j i32) (local $max i32) (local $ok i32)
+    (if (i32.eqz (local.get $sublen)) (then (return (local.get $from))))
+    (local.set $max (i32.sub (local.get $len) (local.get $sublen)))
+    (if (i32.lt_s (local.get $max) (i32.const 0)) (then (return (i32.const -1))))
+    (local.set $i (select (i32.const 0) (local.get $from) (i32.lt_s (local.get $from) (i32.const 0))))
+    (block $found_none
+      (loop $outer
+        (br_if $found_none (i32.gt_s (local.get $i) (local.get $max)))
+        (local.set $j (i32.const 0))
+        (local.set $ok (i32.const 1))
+        (block $inner_done
+          (loop $inner
+            (br_if $inner_done (i32.ge_u (local.get $j) (local.get $sublen)))
+            (if (i32.ne
+              (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $i) (local.get $j))))
+              (i32.load8_u (i32.add (local.get $subptr) (local.get $j)))
+            )
+              (then
+                (local.set $ok (i32.const 0))
+                (br $inner_done)
+              )
+            )
+            (local.set $j (i32.add (local.get $j) (i32.const 1)))
+            (br $inner)
+          )
+        )
+        (if (local.get $ok) (then (return (local.get $i))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $outer)
+      )
+    )
+    (i32.const -1)
+  )
+
   ;; ── i32 → decimal string ──────────────────────────────────────────────────
   ;; Writes the decimal representation of $val at $buf, returns byte count.
   (func $__i32_to_str (param $val i32) (param $buf i32) (result i32)
@@ -219,7 +259,7 @@
   ;; Values outside [-2147483648, 2147483647] for the integer part are clamped.
   (func $__f64_to_str (param $val f64) (param $buf i32) (result i32)
     (local $len i32)
-    (local $ipart i32)
+    (local $ipart i64)
     (local $fpart i64)
     (local $flen i32)
     (local $fdigits i64)
@@ -237,16 +277,17 @@
         (local.set $val (f64.neg (local.get $val)))
       )
     )
-    ;; Integer part
-    (local.set $ipart (i32.trunc_f64_s (local.get $val)))
-    (local.set $len (call $__i32_to_str (local.get $ipart) (local.get $ptr)))
+    ;; Integer part — use i64 to support values beyond i32 range (up to ~9.2e18)
+    ;; Subtract 1 from i64_to_str result to exclude the 'n' bigint suffix it appends.
+    (local.set $ipart (i64.trunc_f64_s (local.get $val)))
+    (local.set $len (i32.sub (call $__i64_to_str (local.get $ipart) (local.get $ptr)) (i32.const 1)))
     (local.set $ptr (i32.add (local.get $ptr) (local.get $len)))
     ;; Step 1: ×1e15, round to nearest integer → up to 15 fractional digits.
     (local.set $fpart
       (i64.trunc_f64_s
         (f64.nearest
           (f64.mul
-            (f64.sub (local.get $val) (f64.convert_i32_s (local.get $ipart)))
+            (f64.sub (local.get $val) (f64.convert_i64_s (local.get $ipart)))
             (f64.const 1000000000000000)
           )
         )
@@ -264,7 +305,7 @@
         (local.set $trial (i64.div_u (local.get $cur_fpart) (i64.const 10)))
         (local.set $recon
           (f64.add
-            (f64.convert_i32_s (local.get $ipart))
+            (f64.convert_i64_s (local.get $ipart))
             (f64.div
               (f64.convert_i64_s (local.get $trial))
               (call $__pow10_f64 (i32.sub (local.get $cur_len) (i32.const 1)))
@@ -391,25 +432,46 @@
     (local $s_ptr i32)
     (local $s_len i32)
     (local $i f64)
+    (local $__ret_str_ptr i32)
+    (local $__ret_str_len i32)
+    (local $__tmpl_num_ptr i32)
+    (local $__tmpl_num_len i32)
     (local.set $s_ptr (i32.const 260))
       (local.set $s_len (i32.const 1))
     (local.set $i (f64.const 0))
     (block $break_0
       (loop $loop_0
-        (br_if $break_0 (i32.eqz (f64.lt (local.get $i) (i32.const 0))))
+        (br_if $break_0 (i32.eqz (f64.lt (local.get $i) (f64.convert_i32_s (i32.load (local.get $arr))))))
         (block $cont_0
           (if (f64.gt (local.get $i) (f64.const 0))
             (then
-            (local.set $s (i32.add (local.get $s) (;? " " ;) (i32.const 0)))
+            (local.set $s_ptr (local.get $s_ptr))
+      (local.set $s_len (local.get $s_len))
+      (call $__str_concat (local.get $s_ptr) (local.get $s_len) (i32.const 261) (i32.const 1))
+      (local.set $s_len)
+      (local.set $s_ptr)
             )
           )
-          (local.set $s (i32.add (local.get $s) (;? `${arr[i]}` ;) (i32.const 0)))
+          (local.set $s_ptr (local.get $s_ptr))
+      (local.set $s_len (local.get $s_len))
+      (local.set $__tmpl_num_ptr (call $__malloc (i32.const 32)))
+      (local.set $__tmpl_num_len (call $__f64_to_str (f64.load (i32.add (i32.add (local.get $arr) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $i)) (i32.const 3)))) (local.get $__tmpl_num_ptr)))
+      (call $__str_concat (local.get $s_ptr) (local.get $s_len) (local.get $__tmpl_num_ptr) (local.get $__tmpl_num_len))
+      (local.set $s_len)
+      (local.set $s_ptr)
         )
         (local.set $i (f64.add (local.get $i) (f64.const 1)))
         (br $loop_0)
       )
     )
-    (return (i32.add (local.get $s_ptr) (;? "]" ;) (i32.const 0)))
+    (local.set $__ret_str_ptr (local.get $s_ptr))
+      (local.set $__ret_str_len (local.get $s_len))
+      (call $__str_concat (local.get $__ret_str_ptr) (local.get $__ret_str_len) (i32.const 262) (i32.const 1))
+      (local.set $__ret_str_len)
+      (local.set $__ret_str_ptr)
+      (global.set $__str_ret_ptr (local.get $__ret_str_ptr))
+      (global.set $__str_ret_len (local.get $__ret_str_len))
+      (return)
   )
   (func $_start (export "_start")
     (local $a i32)
@@ -422,7 +484,7 @@
     (local $twoDStr_len i32)
     (local $r f64)
     (local $__iface_tmp i32)
-    (local.set $a (i32.const 261))
+    (local.set $a (i32.const 263))
         (i32.store (i32.const 0) (i32.const 132))
           (i32.store (i32.const 4) (i32.const 0))
           (i32.store8 (i32.const 132) (i32.const 101))
@@ -430,7 +492,9 @@
           (i32.store8 (i32.const 134) (i32.const 112))
           (i32.store8 (i32.const 135) (i32.const 58))
           (i32.store8 (i32.const 136) (i32.const 32))
-          (i32.store (i32.const 4) (i32.add (i32.const 5) (call $__i32_to_str (call $numArrStr (local.get $a)) (i32.const 137))))
+          (call $numArrStr (local.get $a))
+          (call $__str_gather (global.get $__str_ret_ptr) (global.get $__str_ret_len) (i32.const 137))
+          (i32.store (i32.const 4) (i32.add (i32.const 5) (global.get $__str_ret_len)))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -438,7 +502,7 @@
             (i32.const 0)
             (i32.const 1)
             (i32.const 128)))
-    (f64.store (i32.add (i32.const 261) (i32.shl (i32.const 4) (i32.const 3))) (f64.const 100))
+    (f64.store (i32.add (i32.add (i32.const 263) (i32.const 8)) (i32.shl (i32.const 4) (i32.const 3))) (f64.const 100))
         (i32.store (i32.const 0) (i32.const 132))
           (i32.store (i32.const 4) (i32.const 0))
           (i32.store8 (i32.const 132) (i32.const 115))
@@ -446,7 +510,9 @@
           (i32.store8 (i32.const 134) (i32.const 116))
           (i32.store8 (i32.const 135) (i32.const 58))
           (i32.store8 (i32.const 136) (i32.const 32))
-          (i32.store (i32.const 4) (i32.add (i32.const 5) (call $__i32_to_str (call $numArrStr (local.get $a)) (i32.const 137))))
+          (call $numArrStr (local.get $a))
+          (call $__str_gather (global.get $__str_ret_ptr) (global.get $__str_ret_len) (i32.const 137))
+          (i32.store (i32.const 4) (i32.add (i32.const 5) (global.get $__str_ret_len)))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -461,7 +527,7 @@
           (i32.store8 (i32.const 134) (i32.const 116))
           (i32.store8 (i32.const 135) (i32.const 58))
           (i32.store8 (i32.const 136) (i32.const 32))
-          (i32.store (i32.const 4) (i32.add (i32.const 5) (call $__f64_to_str (f64.load (i32.add (i32.const 261) (i32.shl (i32.const 4) (i32.const 3)))) (i32.const 137))))
+          (i32.store (i32.const 4) (i32.add (i32.const 5) (call $__f64_to_str (f64.load (i32.add (i32.add (i32.const 263) (i32.const 8)) (i32.shl (i32.const 4) (i32.const 3)))) (i32.const 137))))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -484,7 +550,7 @@
             (i32.const 0)
             (i32.const 1)
             (i32.const 128)))
-    (local.set $b (i32.const 301))
+    (local.set $b (i32.const 311))
         (i32.store (i32.const 0) (i32.const 132))
           (i32.store (i32.const 4) (i32.const 0))
           (i32.store8 (i32.const 132) (i32.const 100))
@@ -492,7 +558,9 @@
           (i32.store8 (i32.const 134) (i32.const 108))
           (i32.store8 (i32.const 135) (i32.const 58))
           (i32.store8 (i32.const 136) (i32.const 32))
-          (i32.store (i32.const 4) (i32.add (i32.const 5) (call $__i32_to_str (call $numArrStr (local.get $b)) (i32.const 137))))
+          (call $numArrStr (local.get $b))
+          (call $__str_gather (global.get $__str_ret_ptr) (global.get $__str_ret_len) (i32.const 137))
+          (i32.store (i32.const 4) (i32.add (i32.const 5) (global.get $__str_ret_len)))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -525,7 +593,7 @@
             (loop $loop_2
               (br_if $break_2 (i32.eqz (f64.lt (local.get $col) (f64.const 3))))
               (block $cont_2
-                (f64.store (i32.add (i32.add (local.get $twoD) (i32.const 8)) (i32.shl (;? row][col ;) (i32.const 0) (i32.const 3))) (f64.add (local.get $row) (local.get $col)))
+                (f64.store (i32.add (i32.add (i32.load (i32.add (i32.add (local.get $twoD) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $row)) (i32.const 2)))) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $col)) (i32.const 3))) (f64.add (local.get $row) (local.get $col)))
               )
               (local.set $col (f64.add (local.get $col) (f64.const 1)))
               (br $loop_2)
@@ -541,20 +609,32 @@
     (local.set $r (f64.const 0))
     (block $break_3
       (loop $loop_3
-        (br_if $break_3 (i32.eqz (f64.lt (local.get $r) (i32.load (local.get $twoD)))))
+        (br_if $break_3 (i32.eqz (f64.lt (local.get $r) (f64.convert_i32_s (i32.load (local.get $twoD))))))
         (block $cont_3
           (if (f64.gt (local.get $r) (f64.const 0))
             (then
-            (local.set $twoDStr (i32.add (local.get $twoDStr) (;? " " ;) (i32.const 0)))
+            (local.set $twoDStr_ptr (local.get $twoDStr_ptr))
+      (local.set $twoDStr_len (local.get $twoDStr_len))
+      (call $__str_concat (local.get $twoDStr_ptr) (local.get $twoDStr_len) (i32.const 261) (i32.const 1))
+      (local.set $twoDStr_len)
+      (local.set $twoDStr_ptr)
             )
           )
-          (local.set $twoDStr (i32.add (local.get $twoDStr) (call $numArrStr (f64.load (i32.add (i32.add (local.get $twoD) (i32.const 8)) (i32.shl (local.get $r) (i32.const 3)))))))
+          (local.set $twoDStr_ptr (local.get $twoDStr_ptr))
+      (local.set $twoDStr_len (local.get $twoDStr_len))
+      (call $__str_concat (local.get $twoDStr_ptr) (local.get $twoDStr_len) (call $numArrStr (i32.load (i32.add (i32.add (local.get $twoD) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $r)) (i32.const 2))))) (global.get $__str_ret_ptr) (global.get $__str_ret_len))
+      (local.set $twoDStr_len)
+      (local.set $twoDStr_ptr)
         )
         (local.set $r (f64.add (local.get $r) (f64.const 1)))
         (br $loop_3)
       )
     )
-    (local.set $twoDStr (i32.add (local.get $twoDStr) (;? "]" ;) (i32.const 0)))
+    (local.set $twoDStr_ptr (local.get $twoDStr_ptr))
+      (local.set $twoDStr_len (local.get $twoDStr_len))
+      (call $__str_concat (local.get $twoDStr_ptr) (local.get $twoDStr_len) (i32.const 262) (i32.const 1))
+      (local.set $twoDStr_len)
+      (local.set $twoDStr_ptr)
         (i32.store (i32.const 0) (i32.const 132))
           (i32.store (i32.const 4) (i32.const 0))
           (i32.store8 (i32.const 132) (i32.const 50))
@@ -573,6 +653,8 @@
     (call $proc_exit (i32.const 0))
   )
   (data (i32.const 260) "\5b")
-  (data (i32.const 261) "\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
-  (data (i32.const 301) "\00\00\00\00\00\00\f0\3f\00\00\00\00\00\00\00\40\00\00\00\00\00\00\08\40\00\00\00\00\00\00\10\40\00\00\00\00\00\00\14\40")
+  (data (i32.const 261) "\20")
+  (data (i32.const 262) "\5d")
+  (data (i32.const 263) "\05\00\00\00\05\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+  (data (i32.const 311) "\05\00\00\00\05\00\00\00\00\00\00\00\00\00\f0\3f\00\00\00\00\00\00\00\40\00\00\00\00\00\00\08\40\00\00\00\00\00\00\10\40\00\00\00\00\00\00\14\40")
 )

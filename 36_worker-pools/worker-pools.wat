@@ -2,7 +2,7 @@
   (import "wasi_snapshot_preview1" "proc_exit" (func $proc_exit (param i32)))
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 2)
-  (global $__heap_ptr (mut i32) (i32.const 300))
+  (global $__heap_ptr (mut i32) (i32.const 308))
   ;; Bump allocator — advances __heap_ptr and returns the old value
   (func $__malloc (param $size i32) (result i32)
     (local $ptr i32)
@@ -100,7 +100,7 @@
   ;; Values outside [-2147483648, 2147483647] for the integer part are clamped.
   (func $__f64_to_str (param $val f64) (param $buf i32) (result i32)
     (local $len i32)
-    (local $ipart i32)
+    (local $ipart i64)
     (local $fpart i64)
     (local $flen i32)
     (local $fdigits i64)
@@ -118,16 +118,17 @@
         (local.set $val (f64.neg (local.get $val)))
       )
     )
-    ;; Integer part
-    (local.set $ipart (i32.trunc_f64_s (local.get $val)))
-    (local.set $len (call $__i32_to_str (local.get $ipart) (local.get $ptr)))
+    ;; Integer part — use i64 to support values beyond i32 range (up to ~9.2e18)
+    ;; Subtract 1 from i64_to_str result to exclude the 'n' bigint suffix it appends.
+    (local.set $ipart (i64.trunc_f64_s (local.get $val)))
+    (local.set $len (i32.sub (call $__i64_to_str (local.get $ipart) (local.get $ptr)) (i32.const 1)))
     (local.set $ptr (i32.add (local.get $ptr) (local.get $len)))
     ;; Step 1: ×1e15, round to nearest integer → up to 15 fractional digits.
     (local.set $fpart
       (i64.trunc_f64_s
         (f64.nearest
           (f64.mul
-            (f64.sub (local.get $val) (f64.convert_i32_s (local.get $ipart)))
+            (f64.sub (local.get $val) (f64.convert_i64_s (local.get $ipart)))
             (f64.const 1000000000000000)
           )
         )
@@ -145,7 +146,7 @@
         (local.set $trial (i64.div_u (local.get $cur_fpart) (i64.const 10)))
         (local.set $recon
           (f64.add
-            (f64.convert_i32_s (local.get $ipart))
+            (f64.convert_i64_s (local.get $ipart))
             (f64.div
               (f64.convert_i64_s (local.get $trial))
               (call $__pow10_f64 (i32.sub (local.get $cur_len) (i32.const 1)))
@@ -270,6 +271,8 @@
   )
   (func $worker (param $id f64) (param $j f64) 
     (local $__iface_tmp i32)
+    (local $__tmpl_num_ptr i32)
+    (local $__tmpl_num_len i32)
         (i32.store (i32.const 0) (i32.const 132))
           (i32.store (i32.const 4) (i32.const 0))
           (i32.store8 (i32.const 132) (i32.const 119))
@@ -345,10 +348,10 @@
     (local.set $i (f64.const 0))
     (block $break_0
       (loop $loop_0
-        (br_if $break_0 (i32.eqz (f64.lt (local.get $i) (i32.const 5))))
+        (br_if $break_0 (i32.eqz (f64.lt (local.get $i) (f64.convert_i32_s (i32.const 5)))))
         (block $cont_0
-          (local.set $workerId (f64.add (f64.rem (local.get $i) (f64.const 3)) (f64.const 1)))
-          (call $worker (local.get $workerId) (f64.load (i32.add (i32.const 260) (i32.shl (local.get $i) (i32.const 3)))))
+          (local.set $workerId (f64.add (f64.sub (local.get $i) (f64.mul (f64.trunc (f64.div (local.get $i) (f64.const 3))) (f64.const 3))) (f64.const 1)))
+          (call $worker (local.get $workerId) (f64.load (i32.add (i32.add (i32.const 260) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $i)) (i32.const 3)))))
         )
         (local.set $i (f64.add (local.get $i) (f64.const 1)))
         (br $loop_0)
@@ -356,5 +359,5 @@
     )
     (call $proc_exit (i32.const 0))
   )
-  (data (i32.const 260) "\00\00\00\00\00\00\f0\3f\00\00\00\00\00\00\00\40\00\00\00\00\00\00\08\40\00\00\00\00\00\00\10\40\00\00\00\00\00\00\14\40")
+  (data (i32.const 260) "\05\00\00\00\05\00\00\00\00\00\00\00\00\00\f0\3f\00\00\00\00\00\00\00\40\00\00\00\00\00\00\08\40\00\00\00\00\00\00\10\40\00\00\00\00\00\00\14\40")
 )

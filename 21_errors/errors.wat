@@ -2,7 +2,7 @@
   (import "wasi_snapshot_preview1" "proc_exit" (func $proc_exit (param i32)))
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 2)
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (global $__heap_ptr (mut i32) (i32.const 302))
   ;; Bump allocator — advances __heap_ptr and returns the old value
   (func $__malloc (param $size i32) (result i32)
     (local $ptr i32)
@@ -100,7 +100,7 @@
   ;; Values outside [-2147483648, 2147483647] for the integer part are clamped.
   (func $__f64_to_str (param $val f64) (param $buf i32) (result i32)
     (local $len i32)
-    (local $ipart i32)
+    (local $ipart i64)
     (local $fpart i64)
     (local $flen i32)
     (local $fdigits i64)
@@ -118,16 +118,17 @@
         (local.set $val (f64.neg (local.get $val)))
       )
     )
-    ;; Integer part
-    (local.set $ipart (i32.trunc_f64_s (local.get $val)))
-    (local.set $len (call $__i32_to_str (local.get $ipart) (local.get $ptr)))
+    ;; Integer part — use i64 to support values beyond i32 range (up to ~9.2e18)
+    ;; Subtract 1 from i64_to_str result to exclude the 'n' bigint suffix it appends.
+    (local.set $ipart (i64.trunc_f64_s (local.get $val)))
+    (local.set $len (i32.sub (call $__i64_to_str (local.get $ipart) (local.get $ptr)) (i32.const 1)))
     (local.set $ptr (i32.add (local.get $ptr) (local.get $len)))
     ;; Step 1: ×1e15, round to nearest integer → up to 15 fractional digits.
     (local.set $fpart
       (i64.trunc_f64_s
         (f64.nearest
           (f64.mul
-            (f64.sub (local.get $val) (f64.convert_i32_s (local.get $ipart)))
+            (f64.sub (local.get $val) (f64.convert_i64_s (local.get $ipart)))
             (f64.const 1000000000000000)
           )
         )
@@ -145,7 +146,7 @@
         (local.set $trial (i64.div_u (local.get $cur_fpart) (i64.const 10)))
         (local.set $recon
           (f64.add
-            (f64.convert_i32_s (local.get $ipart))
+            (f64.convert_i64_s (local.get $ipart))
             (f64.div
               (f64.convert_i64_s (local.get $trial))
               (call $__pow10_f64 (i32.sub (local.get $cur_len) (i32.const 1)))
@@ -270,36 +271,48 @@
   )
   (func $f1 (param $arg f64) (result i32)
     (local $__obj_ret i32)
+    (local $__nested_ptr i32)
     (if (f64.eq (local.get $arg) (f64.const 42))
       (then
-      (local.set $__obj_ret (call $__malloc (i32.const 16)))
+      (local.set $__obj_ret (call $__malloc (i32.const 20)))
       (f64.store offset=0 (local.get $__obj_ret) (f64.const -1))
-      (i32.store offset=8 (local.get $__obj_ret) (;? "can't work with 42" ;) (i32.const 0))
-      (i32.store offset=12 (local.get $__obj_ret) (i32.const 1))
+      (i32.store offset=8 (local.get $__obj_ret) (i32.const 260))
+      (i32.store offset=12 (local.get $__obj_ret) (i32.const 18))
+      (i32.store offset=16 (local.get $__obj_ret) (i32.const 1))
       (return (local.get $__obj_ret))
       )
     )
-    (local.set $__obj_ret (call $__malloc (i32.const 16)))
+    (local.set $__obj_ret (call $__malloc (i32.const 20)))
       (f64.store offset=0 (local.get $__obj_ret) (f64.add (local.get $arg) (f64.const 3)))
-      (i32.store offset=8 (local.get $__obj_ret) (;? "" ;) (i32.const 0))
+      (i32.store offset=8 (local.get $__obj_ret) (i32.const 278))
       (i32.store offset=12 (local.get $__obj_ret) (i32.const 0))
+      (i32.store offset=16 (local.get $__obj_ret) (i32.const 0))
       (return (local.get $__obj_ret))
   )
 
   (func $f2 (param $arg f64) (result i32)
     (local $__obj_ret i32)
+    (local $__nested_ptr i32)
     (if (f64.eq (local.get $arg) (f64.const 42))
       (then
       (local.set $__obj_ret (call $__malloc (i32.const 16)))
       (f64.store offset=0 (local.get $__obj_ret) (f64.const -1))
-      (i32.store offset=8 (local.get $__obj_ret) (;? { arg, prob: "can't work with 42" } ;) (i32.const 0))
+      (local.set $__nested_ptr (call $__malloc (i32.const 16)))
+      (f64.store offset=0 (local.get $__nested_ptr) (local.get $arg))
+      (i32.store offset=8 (local.get $__nested_ptr) (i32.const 260))
+      (i32.store offset=12 (local.get $__nested_ptr) (i32.const 18))
+      (i32.store offset=8 (local.get $__obj_ret) (local.get $__nested_ptr))
       (i32.store offset=12 (local.get $__obj_ret) (i32.const 1))
       (return (local.get $__obj_ret))
       )
     )
     (local.set $__obj_ret (call $__malloc (i32.const 16)))
       (f64.store offset=0 (local.get $__obj_ret) (f64.add (local.get $arg) (f64.const 3)))
-      (i32.store offset=8 (local.get $__obj_ret) (;? { arg: 0, prob: "" } ;) (i32.const 0))
+      (local.set $__nested_ptr (call $__malloc (i32.const 16)))
+      (f64.store offset=0 (local.get $__nested_ptr) (f64.const 0))
+      (i32.store offset=8 (local.get $__nested_ptr) (i32.const 278))
+      (i32.store offset=12 (local.get $__nested_ptr) (i32.const 0))
+      (i32.store offset=8 (local.get $__obj_ret) (local.get $__nested_ptr))
       (i32.store offset=12 (local.get $__obj_ret) (i32.const 0))
       (return (local.get $__obj_ret))
   )
@@ -309,13 +322,15 @@
     (local $r i32)
     (local $ae i32)
     (local $__iface_tmp i32)
-    (local.set $inputs (i32.const 260))
+    (local $__tmpl_num_ptr i32)
+    (local $__tmpl_num_len i32)
+    (local.set $inputs (i32.const 278))
     (local.set $i (f64.const 0))
     (block $break_0
       (loop $loop_0
-        (br_if $break_0 (i32.eqz (f64.lt (local.get $i) (i32.const 2))))
+        (br_if $break_0 (i32.eqz (f64.lt (local.get $i) (f64.convert_i32_s (i32.const 2)))))
         (block $cont_0
-          (local.set $r (call $f1 (f64.load (i32.add (i32.const 260) (i32.shl (local.get $i) (i32.const 3))))))
+          (local.set $r (call $f1 (f64.load (i32.add (i32.add (i32.const 278) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $i)) (i32.const 3))))))
           (if (i32.load (i32.add (local.get $r) (i32.const 12)))
             (then
                 (i32.store (i32.const 0) (i32.const 132))
@@ -372,9 +387,9 @@
     (local.set $i (f64.const 0))
     (block $break_1
       (loop $loop_1
-        (br_if $break_1 (i32.eqz (f64.lt (local.get $i) (i32.const 2))))
+        (br_if $break_1 (i32.eqz (f64.lt (local.get $i) (f64.convert_i32_s (i32.const 2)))))
         (block $cont_1
-          (local.set $r (call $f2 (f64.load (i32.add (i32.const 260) (i32.shl (local.get $i) (i32.const 3))))))
+          (local.set $r (call $f2 (f64.load (i32.add (i32.add (i32.const 278) (i32.const 8)) (i32.shl (i32.trunc_f64_s (local.get $i)) (i32.const 3))))))
           (if (i32.load (i32.add (local.get $r) (i32.const 12)))
             (then
                 (i32.store (i32.const 0) (i32.const 132))
@@ -390,12 +405,12 @@
           (i32.store8 (i32.const 140) (i32.const 100))
           (i32.store8 (i32.const 141) (i32.const 58))
           (i32.store8 (i32.const 142) (i32.const 32))
-          (i32.store (i32.const 4) (i32.add (i32.const 11) (call $__i32_to_str (;? r.argErr.arg ;) (i32.const 0) (i32.const 143))))
+          (i32.store (i32.const 4) (i32.add (i32.const 11) (call $__f64_to_str (f64.load (i32.add (i32.load (i32.add (local.get $r) (i32.const 8))) (i32.const 0))) (i32.const 143))))
           (i32.store8 (i32.add (i32.const 132) (i32.add (i32.load (i32.const 4)) (i32.const 0))) (i32.const 32))
           (i32.store8 (i32.add (i32.const 132) (i32.add (i32.load (i32.const 4)) (i32.const 1))) (i32.const 45))
           (i32.store8 (i32.add (i32.const 132) (i32.add (i32.load (i32.const 4)) (i32.const 2))) (i32.const 32))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 3)))
-          (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (call $__i32_to_str (;? r.argErr.prob ;) (i32.const 0) (i32.add (i32.const 132) (i32.load (i32.const 4))))))
+          (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (call $__i32_to_str (i32.load (i32.add (i32.load (i32.add (local.get $r) (i32.const 8))) (i32.const 8))) (i32.add (i32.const 132) (i32.load (i32.const 4))))))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -437,7 +452,7 @@
     (if (i32.load (i32.add (local.get $ae) (i32.const 12)))
       (then
           (i32.store (i32.const 0) (i32.const 132))
-          (i32.store (i32.const 4) (call $__i32_to_str (;? ae.argErr.arg ;) (i32.const 0) (i32.const 132)))
+          (i32.store (i32.const 4) (call $__f64_to_str (f64.load (i32.add (i32.load (i32.add (local.get $ae) (i32.const 8))) (i32.const 0))) (i32.const 132)))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -446,7 +461,7 @@
             (i32.const 1)
             (i32.const 128)))
           (i32.store (i32.const 0) (i32.const 132))
-          (i32.store (i32.const 4) (call $__i32_to_str (;? ae.argErr.prob ;) (i32.const 0) (i32.const 132)))
+          (i32.store (i32.const 4) (call $__i32_to_str (i32.load (i32.add (i32.load (i32.add (local.get $ae) (i32.const 8))) (i32.const 8))) (i32.const 132)))
           (i32.store8 (i32.add (i32.const 132) (i32.load (i32.const 4))) (i32.const 10))
           (i32.store (i32.const 4) (i32.add (i32.load (i32.const 4)) (i32.const 1)))
           (drop (call $fd_write
@@ -458,5 +473,7 @@
     )
     (call $proc_exit (i32.const 0))
   )
-  (data (i32.const 260) "\00\00\00\00\00\00\1c\40\00\00\00\00\00\00\45\40")
+  (data (i32.const 260) "\63\61\6e\27\74\20\77\6f\72\6b\20\77\69\74\68\20\34\32")
+  (data (i32.const 278) "")
+  (data (i32.const 278) "\02\00\00\00\02\00\00\00\00\00\00\00\00\00\1c\40\00\00\00\00\00\00\45\40")
 )

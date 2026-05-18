@@ -11,7 +11,7 @@ $ deno install -g -A jsr:@jrmarcum/wasmtk
 If wasmtk has been installed properly you will be able to type the following command in the terminal command line and receive the response shown:
 ```
 $ wasmtk --version
-wasmtk v1.2.8
+wasmtk v1.5.4
 (Note: the version shown here varies with your installed version)
 ```
 ## How to Run Examples

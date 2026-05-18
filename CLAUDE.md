@@ -126,6 +126,10 @@ Text Format (WAT). Supported features include:
 **Multi-file**
 - Relative imports: `import { foo } from "./lib.ts"` (via tsbundler)
 
+**Console I/O**
+- `console.log(...)`, `console.error(...)`, `console.warn(...)` — all write to stdout/stderr
+- `console.log()` with zero arguments is **not** supported — use `console.log("")`
+
 **Not supported in wasic (use note in .md)**
 - `for...of`, `for...in` — use indexed `for` loops instead
 - `Object.keys()`, `Object.entries()` — use parallel arrays or manual lookup
@@ -139,9 +143,12 @@ Text Format (WAT). Supported features include:
 - `RegExp` — implement simple pattern matching
 - `URL` API — parse strings manually
 - `parseInt()` / `parseFloat()` — implement manually or use typed conversion
+- `isNaN()` — not available; avoid or replace with explicit checks
+- `String.fromCharCode()` — not available; use `.charCodeAt()` for inspection
 - `crypto` module — implement algorithms manually or note not available
 - Network APIs (`fetch`, `http`, `net`) — not available in WASI
 - Process APIs (`exec`, `spawn`, signals) — not available in WASI
+- Custom exit codes — `proc_exit` always exits 0; cannot set a non-zero exit code from TypeScript
 - `Deno.*` APIs — use `console.log` directly
 - Union types (`A | B`) — use struct with discriminator field
 
@@ -193,6 +200,32 @@ Thumbs.db
   code-point values as constants, or note the limitation.
 - **Lessons with setup steps:** 58 (reading-files — run 59 first to create
   `tmp/dat`), 60 (line-filters — requires stdin piping).
+
+## Per-Lesson Implementation Strategy (Unavailable Features)
+
+Lessons where WASI/wasic limitations require workarounds:
+
+- **58 (reading-files):** Hardcoded simulation of reading `tmp/dat`; description note explains WASI has no file-read API.
+- **59 (writing-files):** Hardcoded simulation; prints the bytes-written counts that Go would produce.
+- **60 (line-filters):** No stdin in WASI; hardcoded input lines processed through the filter logic; description note.
+- **61 (file-paths):** Fully implemented using `charCodeAt`/`slice`/`startsWith`/`endsWith`; path normalization and `rel()` hardcoded.
+- **62 (directories):** Hardcoded simulation of directory listing output.
+- **63 (temporary-files):** Hardcoded simulation; path in output varies, noted in `.md`.
+- **64 (command-line-arguments):** Hardcoded demo values; description note explains no `args` access in WASI.
+- **65 (command-line-flags):** Hardcoded demo values with description note.
+- **66 (command-line-subcommands):** Hardcoded demo values with description note.
+- **67 (environment-variables):** Hardcoded demo values; description note that env access is not available in WASI.
+- **68 (testing-and-benchmarking):** Manual test runner implemented in TypeScript, mimicking `go test -v` output format.
+- **69 (http-client):** HTTP not available in WASI; description note + minimal sequential simulation.
+- **70 (http-server):** HTTP not available in WASI; description note + prints simulated request/response.
+- **71 (context):** Context cancellation not available; description note + sequential simulation.
+- **72 (tcp-server):** TCP not available in WASI; description note + `toUpperCase` echo demo.
+- **73 (text-templates):** Implemented using `str.replace()` for `{{.}}` and `{{.Name}}`; if/else and range blocks hardcoded.
+- **74 (execing-processes):** Not available in WASI; description note + single explanatory `console.log`.
+- **75 (spawning-processes):** Not available in WASI; description note + single explanatory `console.log`.
+- **76 (signals):** Signal handling not available in WASI; description note showing expected output for `SIGINT`.
+- **77 (exit):** Custom exit codes not supported (`proc_exit` always exits 0); prints `exit status 3` to demonstrate the concept.
+- **78 (sha256-hashes):** No crypto API; SHA256 of `"sha256 this string"` is pre-computed and hard-coded.
 
 ## Variable Output Lessons
 
